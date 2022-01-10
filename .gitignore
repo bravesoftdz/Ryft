@@ -67,3 +67,8 @@ __recovery/
 
 # Boss dependency manager vendor folder https://github.com/HashLoad/boss
 modules/
+Project19.dproj
+Project19.dpr
+Project19.res
+Unit19.dfm
+Unit19.pas
