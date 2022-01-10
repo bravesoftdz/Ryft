@@ -28,6 +28,13 @@ type
     FCity: string;
   end;
 
+  IRyftAccount = interface
+    ['{7A20D3C9-2DA0-4FD6-9ED2-EF1D928734E7}']
+    procedure LoadFromJson(AData: string);
+    function GetEmail: string;
+    property Email: string read GetEmail;
+  end;
+
   IRyftPaymentSession = interface
     ['{7EEA771B-7310-4BC4-AD94-A2E3DFB5891E}']
     function GetAmount: integer;
@@ -65,6 +72,8 @@ type
 
   IRyft = interface
     ['{595E0D33-0E92-4DA7-B699-D4C9E9E8768A}']
+    function CreateAccount(AEmail: string): IRyftAccount;
+    function CreateAccountLink(AAccountID, ARedirectUrl: string): string;
     function CreatePaymentSession(AAmount: integer;
                                   ACurrency: string;
                                   ACustomerEmail: string;
@@ -83,6 +92,7 @@ type
                                   const ACustomerEmail: string = '';
                                   const APlatFormFee: integer = -1;
                                   const AMetaData: TStrings = nil): IRyftPaymentSession;
+
   end;
 
   function CreateRyft(APrivateKey: string; const ASandBox: Boolean = False): IRyft;
@@ -96,6 +106,14 @@ const
   C_ENDPOINT_SANDBOX = 'https://sandbox-api.ryftpay.com/v1/';
 
 type
+  TRyftAccount = class(TInterfacedObject, IRyftAccount)
+  private
+    FEmail: string;
+  protected
+    function GetEmail: string;
+    procedure LoadFromJson(AData: string);
+  end;
+
   TRyftPaymentSession = class(TInterfacedObject, IRyftPaymentSession)
   private
     FID: string;
@@ -147,6 +165,8 @@ type
     function PostHttp(AResource, AData: string; const ALinkedAccount: string = ''): IHTTPResponse;
     function PatchHttp(AResource, AData: string; const ALinkedAccount: string = ''): IHTTPResponse;
   protected
+    function CreateAccount(AEmail: string): IRyftAccount;
+    function CreateAccountLink(AAccountID, ARedirectUrl: string): string;
     function CreatePaymentSession(AAmount: integer;
                                   ACurrency: string;
                                   ACustomerEmail: string;
@@ -166,23 +186,57 @@ type
                                   const AMetaData: TStrings = nil): IRyftPaymentSession;
 
   public
-    constructor Create(APrivateKey: string; const ASandBox: Boolean = False);
+    constructor Create(APrivateKey: string);
     destructor Destroy; override;
   end;
 
 
 function CreateRyft(APrivateKey: string; const ASandBox: Boolean = False): IRyft;
 begin
-  Result := TRyft.Create(APrivateKey, ASandBox);
+  Result := TRyft.Create(APrivateKey);
 end;
 
 
 { TRyft }
 
-constructor TRyft.Create(APrivateKey: string; const ASandBox: Boolean = False);
+constructor TRyft.Create(APrivateKey: string);
 begin
   FPrivateKey := APrivateKey;
-  FSandBox := ASandBox;
+  FSandBox := Pos('sandbox', APrivateKey.ToLower) > 0;
+end;
+
+function TRyft.CreateAccount(AEmail: string): IRyftAccount;
+var
+  AJson: TJsonObject;
+  AData: string;
+begin
+  Result := TRyftAccount.Create;
+  AJson := TJsonObject.Create;
+  try
+    AJson.S['email'] := AEmail;
+    AData := PostHttp('accounts', AJson.ToJson).ContentAsString;
+    Result.LoadFromJson(AData);
+  finally
+    AJson.Free;
+  end;
+end;
+
+function TRyft.CreateAccountLink(AAccountID, ARedirectUrl: string): string;
+var
+  AJson: TJsonObject;
+  AData: string;
+begin
+  AJson := TJsonObject.Create;
+  try
+    AJson.S['accountId'] := AAccountID;
+    AJson.S['redirectUrl'] := ARedirectUrl;
+    AData := PostHttp('account-links', AJson.ToJson).ContentAsString;
+    AJson.FromJSON(AData);
+    Result := AJson.S['url'];
+
+  finally
+    AJson.Free;
+  end;
 end;
 
 function TRyft.CreateHttp: THTTPClient;
@@ -213,6 +267,8 @@ begin
     AJson.S['amount'] := IntToStr(AAmount);
     AJson.S['currency'] := ACurrency;
     AJson.S['customerEmail'] := ACustomerEmail;
+    if APassThroughFee then
+      AJson.B['passThroughProcessingFee'] := APassThroughFee;
     if AReturnURL <> '' then AJson.S['returnURL'] := AReturnURL;
     if APlatformFee > 0 then AJson.S['platformFee'] := IntToStr(APlatformFee);
     if AMetaData <> nil then
@@ -437,6 +493,7 @@ begin
   try
     FID := AJson.S['id'];
     FAmount := AJson.I['amount'];
+    FClientSecret := AJson.S['clientSecret'];
     FCurrency := AJson.S['currency'];
     FStatementDescriptor.FDescriptor := AJson.O['statementDescriptor'].S['descriptor'];
     FStatementDescriptor.FCity := AJson.O['statementDescriptor'].S['city'];
@@ -448,6 +505,18 @@ begin
   finally
     AJson.Free;
   end;
+end;
+
+{ TRyftAccount }
+
+function TRyftAccount.GetEmail: string;
+begin
+  Result := FEmail;
+end;
+
+procedure TRyftAccount.LoadFromJson(AData: string);
+begin
+  //
 end;
 
 end.
